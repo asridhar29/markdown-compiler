@@ -3,7 +3,17 @@ This file contains functions that work on entire documents at a time
 (and not line-by-line).
 '''
 
-from markdown_compiler.util.line_functions import *
+from markdown_compiler.util.line_functions import (
+    compile_headers,
+    compile_strikethrough,
+    compile_bold_stars,
+    compile_bold_underscore,
+    compile_italic_star,
+    compile_italic_underscore,
+    compile_code_inline,
+    compile_images,
+    compile_links,
+)
 
 
 def compile_lines(text):
@@ -129,32 +139,147 @@ def compile_lines(text):
         print('i=',i)
     </pre>
     <BLANKLINE>
+
+    NOTE:
+    This third set of test cases is for the extra-credit ordered list feature.
+    A line like "1. this" becomes one <li> entry inside an <ol> list.
+    Consecutive numbered lines are grouped into a single <ol>...</ol> list.
+
+    >>> print(compile_lines("""
+    ... 1. this
+    ... """))
+    <BLANKLINE>
+    <ol><li>this</li></ol>
+
+    >>> print(compile_lines("""
+    ... 1. this
+    ... 2. is
+    ... 3. a
+    ... 4. list
+    ... """))
+    <BLANKLINE>
+    <ol><li>this</li><li>is</li><li>a</li><li>list</li></ol>
+
+    >>> print(compile_lines("""
+    ... Here is a list:
+    ... 1. this
+    ... 2. is
+    ... 3. a
+    ... 4. list
+    ... """))
+    <BLANKLINE>
+    <p>
+    Here is a list:
+    </p>
+    <ol><li>this</li><li>is</li><li>a</li><li>list</li></ol>
     '''
     lines = text.split('\n')
     new_lines = []
     in_paragraph = False
-    for line in lines:
-        line = line.strip()
-        if line=='':
+    in_code = False
+    in_list = False
+    list_html = ''
+    for raw_line in lines:
+        stripped = raw_line.strip()
+
+        # Fenced code blocks preserve their original indentation and
+        # newlines, so they are handled before any stripping/markdown
+        # transformations are applied to the rest of the line.
+        if stripped.startswith('```'):
+            if in_list:
+                new_lines.append('<ol>' + list_html + '</ol>')
+                in_list = False
+                list_html = ''
+            if in_code:
+                in_code = False
+                new_lines.append('</pre>')
+            else:
+                in_code = True
+                new_lines.append('<pre>')
+            continue
+        if in_code:
+            new_lines.append(raw_line)
+            continue
+
+        # a blank line ends whatever paragraph or list is currently open
+        if stripped == '':
+            if in_list:
+                new_lines.append('<ol>' + list_html + '</ol>')
+                in_list = False
+                list_html = ''
+                continue
             if in_paragraph:
-                line='</p>'
+                new_lines.append('</p>')
                 in_paragraph = False
-        else:
-            if line[0] != '#' and not in_paragraph:
-                in_paragraph = True
-                line = '<p>\n'+line
-            line = compile_headers(line)
-            line = compile_strikethrough(line)
-            line = compile_bold_stars(line)
-            line = compile_bold_underscore(line)
-            line = compile_italic_star(line)
-            line = compile_italic_underscore(line)
-            line = compile_code_inline(line)
-            line = compile_images(line)
-            line = compile_links(line)
+            else:
+                new_lines.append('')
+            continue
+
+        # check if this line is a numbered list item, like "1. this"
+        item_text = get_list_item_text(stripped)
+        if item_text is not None:
+            if not in_list:
+                if in_paragraph:
+                    new_lines.append('</p>')
+                    in_paragraph = False
+                in_list = True
+                list_html = ''
+            list_html = list_html + '<li>' + item_text + '</li>'
+            continue
+
+        # a normal line ends any list that was open
+        if in_list:
+            new_lines.append('<ol>' + list_html + '</ol>')
+            in_list = False
+            list_html = ''
+
+        line = stripped
+        if line[0] != '#' and not in_paragraph:
+            in_paragraph = True
+            line = '<p>\n' + line
+        line = compile_headers(line)
+        line = compile_strikethrough(line)
+        line = compile_bold_stars(line)
+        line = compile_bold_underscore(line)
+        line = compile_italic_star(line)
+        line = compile_italic_underscore(line)
+        line = compile_code_inline(line)
+        line = compile_images(line)
+        line = compile_links(line)
         new_lines.append(line)
+
+    # close a list that was never followed by a blank line
+    if in_list:
+        new_lines.append('<ol>' + list_html + '</ol>')
+
     new_text = '\n'.join(new_lines)
     return new_text
+
+
+def get_list_item_text(line):
+    '''
+    If line looks like a numbered list item (for example "1. this"),
+    return the text after the number and period.
+    Otherwise, return None.
+    '''
+    dot_position = line.find('.')
+    if dot_position == -1:
+        return None
+
+    number_part = line[:dot_position]
+    if number_part == '':
+        return None
+
+    for character in number_part:
+        if not character.isdigit():
+            return None
+
+    # the period must be immediately followed by a space
+    after_dot = dot_position + 1
+    if after_dot >= len(line) or line[after_dot] != ' ':
+        return None
+
+    return line[after_dot + 1:]
 
 
 def markdown_to_html(markdown, add_css):
@@ -189,10 +314,10 @@ def markdown_to_html(markdown, add_css):
 <link rel="stylesheet" href="https://izbicki.me/css/code.css" />
 <link rel="stylesheet" href="https://izbicki.me/css/default.css" />
         '''
-    html+='''
+    html += '''
 </head>
 <body>
-    '''+compile_lines(markdown)+'''
+    ''' + compile_lines(markdown) + '''
 </body>
 </html>
     '''
@@ -227,7 +352,17 @@ def minify(html):
     >>> minify('a\n\n\n\n\n\n\n\n\n\n\n\n\n\nb\n\n\n\n\n\n\n\n\n\n')
     'a b'
     '''
-    return html
+    # split() with no arguments breaks the text into a list of words,
+    # treating any run of spaces/newlines/tabs as a single separator
+    words = html.split()
+
+    result = ''
+    for word in words:
+        if result == '':
+            result = word
+        else:
+            result = result + ' ' + word
+    return result
 
 
 def convert_file(input_file, add_css):
@@ -254,5 +389,5 @@ def convert_file(input_file, add_css):
     # Keep code-block newlines and indentation in the saved page.
 
     # write the output file
-    with open(input_file[:-2]+'html', 'w', encoding='utf-8') as f:
+    with open(input_file[:-2] + 'html', 'w', encoding='utf-8') as f:
         f.write(html)

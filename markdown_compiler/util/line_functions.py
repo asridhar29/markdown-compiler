@@ -2,6 +2,7 @@
 Each of the functions in this file takes a single line of input and transforms the line in some way.
 '''
 
+
 def compile_headers(line):
     '''
     Convert markdown headers into <h1>,<h2>,etc tags.
@@ -26,7 +27,20 @@ def compile_headers(line):
     >>> compile_headers('      # this is not a header')
     '      # this is not a header'
     '''
-    return line
+    if line.startswith('###### '):
+        return '<h6>' + line[6:] + '</h6>'
+    elif line.startswith('##### '):
+        return '<h5>' + line[5:] + '</h5>'
+    elif line.startswith('#### '):
+        return '<h4>' + line[4:] + '</h4>'
+    elif line.startswith('### '):
+        return '<h3>' + line[3:] + '</h3>'
+    elif line.startswith('## '):
+        return '<h2>' + line[2:] + '</h2>'
+    elif line.startswith('# '):
+        return '<h1>' + line[1:] + '</h1>'
+    else:
+        return line
 
 
 def compile_italic_star(line):
@@ -50,7 +64,19 @@ def compile_italic_star(line):
     >>> compile_italic_star('*')
     '*'
     '''
-    return line
+    result = ''
+    remaining = line
+    start = remaining.find('*')
+    while start != -1:
+        end = remaining.find('*', start + 1)
+        if end == -1:
+            break
+        content = remaining[start + 1:end]
+        result = result + remaining[:start] + '<i>' + content + '</i>'
+        remaining = remaining[end + 1:]
+        start = remaining.find('*')
+    result = result + remaining
+    return result
 
 
 def compile_italic_underscore(line):
@@ -71,7 +97,19 @@ def compile_italic_underscore(line):
     >>> compile_italic_underscore('_')
     '_'
     '''
-    return line
+    result = ''
+    remaining = line
+    start = remaining.find('_')
+    while start != -1:
+        end = remaining.find('_', start + 1)
+        if end == -1:
+            break
+        content = remaining[start + 1:end]
+        result = result + remaining[:start] + '<i>' + content + '</i>'
+        remaining = remaining[end + 1:]
+        start = remaining.find('_')
+    result = result + remaining
+    return result
 
 
 def compile_strikethrough(line):
@@ -94,7 +132,19 @@ def compile_strikethrough(line):
     >>> compile_strikethrough('~~')
     '~~'
     '''
-    return line
+    result = ''
+    remaining = line
+    start = remaining.find('~~')
+    while start != -1:
+        end = remaining.find('~~', start + 2)
+        if end == -1:
+            break
+        content = remaining[start + 2:end]
+        result = result + remaining[:start] + '<ins>' + content + '</ins>'
+        remaining = remaining[end + 2:]
+        start = remaining.find('~~')
+    result = result + remaining
+    return result
 
 
 def compile_bold_stars(line):
@@ -115,7 +165,19 @@ def compile_bold_stars(line):
     >>> compile_bold_stars('**')
     '**'
     '''
-    return line
+    result = ''
+    remaining = line
+    start = remaining.find('**')
+    while start != -1:
+        end = remaining.find('**', start + 2)
+        if end == -1:
+            break
+        content = remaining[start + 2:end]
+        result = result + remaining[:start] + '<b>' + content + '</b>'
+        remaining = remaining[end + 2:]
+        start = remaining.find('**')
+    result = result + remaining
+    return result
 
 
 def compile_bold_underscore(line):
@@ -136,7 +198,19 @@ def compile_bold_underscore(line):
     >>> compile_bold_underscore('__')
     '__'
     '''
-    return line
+    result = ''
+    remaining = line
+    start = remaining.find('__')
+    while start != -1:
+        end = remaining.find('__', start + 2)
+        if end == -1:
+            break
+        content = remaining[start + 2:end]
+        result = result + remaining[:start] + '<b>' + content + '</b>'
+        remaining = remaining[end + 2:]
+        start = remaining.find('__')
+    result = result + remaining
+    return result
 
 
 def compile_code_inline(line):
@@ -166,7 +240,27 @@ def compile_code_inline(line):
     >>> compile_code_inline('```python3')
     '```python3'
     '''
-    return line
+    # a line starting with three backticks is a code fence marker,
+    # not inline code, so leave it alone
+    if line.startswith('```'):
+        return line
+
+    result = ''
+    remaining = line
+    start = remaining.find('`')
+    while start != -1:
+        end = remaining.find('`', start + 1)
+        if end == -1:
+            break
+        content = remaining[start + 1:end]
+        # escape html special characters so they show up as text
+        content = content.replace('<', '&lt;')
+        content = content.replace('>', '&gt;')
+        result = result + remaining[:start] + '<code>' + content + '</code>'
+        remaining = remaining[end + 1:]
+        start = remaining.find('`')
+    result = result + remaining
+    return result
 
 
 def compile_links(line):
@@ -186,7 +280,26 @@ def compile_links(line):
     >>> compile_links('this is wrong: [course webpage](https://github.com/mikeizbicki/cmc-csci040')
     'this is wrong: [course webpage](https://github.com/mikeizbicki/cmc-csci040'
     '''
-    return line
+    result = ''
+    remaining = line
+    start = remaining.find('[')
+    while start != -1:
+        close_bracket = remaining.find(']', start + 1)
+        if close_bracket == -1:
+            break
+        # the closing bracket must be immediately followed by an opening parenthesis
+        if close_bracket + 1 >= len(remaining) or remaining[close_bracket + 1] != '(':
+            break
+        close_paren = remaining.find(')', close_bracket + 2)
+        if close_paren == -1:
+            break
+        text = remaining[start + 1:close_bracket]
+        url = remaining[close_bracket + 2:close_paren]
+        result = result + remaining[:start] + '<a href="' + url + '">' + text + '</a>'
+        remaining = remaining[close_paren + 1:]
+        start = remaining.find('[')
+    result = result + remaining
+    return result
 
 
 def compile_images(line):
@@ -205,4 +318,23 @@ def compile_images(line):
     >>> compile_images('This is an image of Mike Izbicki: ![Mike Izbicki](https://avatars1.githubusercontent.com/u/1052630?v=2&s=460)')
     'This is an image of Mike Izbicki: <img src="https://avatars1.githubusercontent.com/u/1052630?v=2&s=460" alt="Mike Izbicki" />'
     '''
-    return line
+    result = ''
+    remaining = line
+    start = remaining.find('![')
+    while start != -1:
+        close_bracket = remaining.find(']', start + 2)
+        if close_bracket == -1:
+            break
+        # the closing bracket must be immediately followed by an opening parenthesis
+        if close_bracket + 1 >= len(remaining) or remaining[close_bracket + 1] != '(':
+            break
+        close_paren = remaining.find(')', close_bracket + 2)
+        if close_paren == -1:
+            break
+        alt = remaining[start + 2:close_bracket]
+        url = remaining[close_bracket + 2:close_paren]
+        result = result + remaining[:start] + '<img src="' + url + '" alt="' + alt + '" />'
+        remaining = remaining[close_paren + 1:]
+        start = remaining.find('![')
+    result = result + remaining
+    return result
